@@ -1,0 +1,7 @@
+const DB_NAME="cubeclash",DB_VERSION=1,STORE="solves";
+function openDB(){return new Promise((resolve,reject)=>{const r=indexedDB.open(DB_NAME,DB_VERSION);r.onupgradeneeded=()=>r.result.createObjectStore(STORE,{keyPath:"id"});r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error)})}
+export async function addSolve(s){const db=await openDB();return new Promise((res,rej)=>{const tx=db.transaction(STORE,"readwrite");tx.objectStore(STORE).put(s);tx.oncomplete=()=>res(s);tx.onerror=()=>rej(tx.error)})}
+export async function getSolves(){const db=await openDB();return new Promise((res,rej)=>{const r=db.transaction(STORE,"readonly").objectStore(STORE).getAll();r.onsuccess=()=>res(r.result.sort((a,b)=>b.createdAt-a.createdAt));r.onerror=()=>rej(r.error)})}
+export async function clearSolves(){const db=await openDB();return new Promise((res,rej)=>{const tx=db.transaction(STORE,"readwrite");tx.objectStore(STORE).clear();tx.oncomplete=res;tx.onerror=()=>rej(tx.error)})}
+export async function exportData(){return {app:"CubeClash",version:1,exportedAt:new Date().toISOString(),solves:await getSolves()}}
+export async function importData(data){if(!data||!Array.isArray(data.solves))throw Error("Invalid data");const db=await openDB();return new Promise((res,rej)=>{const tx=db.transaction(STORE,"readwrite"),s=tx.objectStore(STORE);for(const x of data.solves)if(x?.id)s.put(x);tx.oncomplete=res;tx.onerror=()=>rej(tx.error)})}
