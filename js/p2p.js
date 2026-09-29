@@ -76,6 +76,7 @@ export class P2PRoom{
       if(sender.track?.kind!=="video")continue;
       const p=sender.getParameters();p.encodings??=[{}];const e=p.encodings[0];e.maxBitrate=1200000;e.maxFramerate=30;e.degradationPreference="maintain-framerate";try{await sender.setParameters(p)}catch{}
     }
+    }
   }
   answerWithCamera(stream){return this.answerWithMedia(stream)}
   attachCall(call){
