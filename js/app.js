@@ -269,46 +269,11 @@ function animateOwnScramble(){
   s.replayScramble=()=>{s.scrambleRunId=(s.scrambleRunId||0)+1;animateOwnScramble()};
   play();
 }
-let menuHeroLoop=0;
-function stopMenuHeroCube(){menuHeroLoop++;}
-async function animateMenuHeroCube(root=document.querySelector("#menuHeroCube")){
+function renderMenuHeroCube(root=document.querySelector("#menuHeroCube")){
   if(!root)return;
-  const loopId=++menuHeroLoop;
-  const size=3;
-  const makeMoves=()=>{
-    const faces=["R","L","U","D","F","B"];
-    const suffix=["","'","2"];
-    const out=[];
-    let lastAxis="";
-    let lastFace="";
-    while(out.length<10){
-      const face=faces[randomInt(faces.length)];
-      const axis=MOVE_AXIS[face];
-      if(axis===lastAxis||face===lastFace)continue;
-      out.push(face+suffix[randomInt(suffix.length)]);
-      lastAxis=axis;lastFace=face;
-    }
-    return out;
-  };
-  const pause=ms=>new Promise(r=>setTimeout(r,ms));
-  const renderSeq=async(tokens,base=[])=>{
-    for(let i=1;i<=tokens.length;i++){
-      if(loopId!==menuHeroLoop)return;
-      renderCube(root,buildCubeState(size,[...base,...tokens.slice(0,i)].join(" ")));
-      await pause(170);
-    }
-  };
-  while(loopId===menuHeroLoop){
-    const scramble=makeMoves();
-    const solve=scramble.slice().reverse().map(t=>t.endsWith("2")?t:t.endsWith("'")?t.slice(0,-1):`${t}'`);
-    renderCube(root,buildSolvedCubeState(size));
-    await pause(280);
-    await renderSeq(scramble);
-    await pause(220);
-    await renderSeq(solve,scramble);
-    await pause(220);
-  }
+  render333Cube(root,buildSolvedCubeState(3));
 }
+function stopMenuHeroCube(){}
 function cubeStateKey(c){return `${c.p.join(",")}:${c.stickers.map(x=>x.normal.join(",")+x.color).sort().join("|")}`}
 
 async function mountCube(){
@@ -561,7 +526,7 @@ function bindSolo(){
 }
 function tutorial(){v(`<div class="tutorial-screen"><div class="tutorial-card"><div class="tutorial-kicker">FIRST TIME SETUP / 01</div><h1 class="tutorial-title">HOW CUBECLASH WORKS</h1><p class="tutorial-intro">A quick guide before you start. You can reopen this tutorial later from the menu.</p><div class="tutorial-steps"><article><span>01</span><h2>CHOOSE A PUZZLE</h2><p>Select 2×2 through 7×7. CubeClash generates a new internally generated scramble for every solve.</p></article><article><span>02</span><h2>READ THE SCRAMBLE</h2><p>The 3D cube shows the exact state produced by the scramble, so the visual matches the moves shown above it.</p></article><article><span>03</span><h2>INSPECTION</h2><p>Press Space, Enter, or tap the timer once to begin inspection. Under 15 seconds is normal, 15 to under 17 seconds is +2, and 17 seconds or more is DNF.</p></article><article><span>04</span><h2>SOLVE</h2><p>During inspection, hold Space or Enter and release after the hold indicator appears to start the solve. Press the key again to finish. Your result is saved on this device.</p></article><article><span>05</span><h2>1V1 ROOMS</h2><p>For beta, rooms use a browser-to-browser WebRTC connection. The host and guest exchange connection data to connect.</p></article><article><span>06</span><h2>YOUR DATA</h2><p>Solves and settings stay in your browser. Use JSON export if you want a backup or to move your timer data.</p></article></div><div class="tutorial-actions"><button class="primary-btn" id="tutorialStart">I UNDERSTAND — OPEN MENU</button></div></div></div>`);document.querySelector("#tutorialStart").onclick=()=>{localStorage.setItem("cubeclash-tutorial-seen","1");home()}}
 function dashboard(){v(`<div class="hero"><div class="hero-grid"><div><div class="section-title"><small>01 / SPEEDCUBING PLATFORM</small><small>BETA</small></div><h1 class="hero-title cube-font">CUBE<span>CLASH</span></h1><p class="hero-copy">A smooth responsive speedcubing timer for 2×2 through 7×7 with an internal scramble engine, real 3D scramble visualization, local history, installable PWA support, and peer-to-peer 1v1 rooms.</p><div class="hero-actions"><button class="primary-btn" data-view="solo">SOLO TIMER</button><button class="ghost-btn" data-view="room">CREATE / JOIN 1V1</button></div></div><div class="technical-card"><div class="spec-list"><div class="spec"><span>PUZZLES</span><span>2×2 / 7×7</span></div><div class="spec"><span>SCRAMBLES</span><span>INTERNAL ENGINE</span></div><div class="spec"><span>SYNC</span><span>WEBRTC P2P</span></div><div class="spec"><span>STORAGE</span><span>INDEXEDDB</span></div><div class="spec"><span>INSTALL</span><span>PWA</span></div></div></div></div></div>`)}
-function home(){const folder=currentSolveFolder()||defaultSolveFolder();const modeLabel=folder.mode==="blind"?"BLIND":folder.mode==="onehand"?"ONE-HAND":"NORMAL";const sessionLabel=folder.mode==="blind"?"BLIND":folder.mode==="onehand"?"ONE-HAND":"STANDARD";v(`<div class="menu-screen"><div class="menu-wrap"><section class="menu-main"><div class="menu-content"><div class="menu-kicker">WELCOME / CUBECLASH BETA</div><h1 class="menu-title">CUBE<span>CLASH</span></h1><p class="menu-sub">Train faster, organize your sessions, and jump into solo or online cube practice from one polished dashboard.</p><div class="menu-badges"><span>${puzzleLabel(folder.puzzle)}</span><span>${modeLabel}</span><span>STATS</span><span>ROOMS</span></div><div class="menu-actions"><button class="menu-action" data-view="solo"><span>SOLO TIMER</span><span class="arrow">→</span></button><button class="menu-action" data-view="room"><span>CREATE / JOIN 1V1</span><span class="arrow">→</span></button><button class="menu-action" data-view="settings"><span>SETTINGS</span><span class="arrow">→</span></button></div></div><div class="menu-mini-stats"><div class="mini-stat"><span>SESSION</span><strong>${esc(folder.name)}</strong></div><div class="mini-stat"><span>PUZZLE</span><strong>${puzzleLabel(folder.puzzle)}</strong></div><div class="mini-stat"><span>MODE</span><strong>${modeLabel}</strong></div></div></section><aside class="menu-visual"><div class="menu-visual-head"><span>ACTIVE FOLDER</span><strong>${esc(folder.name)}</strong></div><div class="menu-visual-cube" id="menuHeroCube"></div><div class="menu-visual-grid"><div><small>INSPECTION</small><strong>${folder.inspection}s</strong></div><div><small>SIZE</small><strong>${puzzleLabel(folder.puzzle)}</strong></div><div><small>SESSION</small><strong>${sessionLabel}</strong></div></div></aside></div></div>`);applyTheme(currentTheme());bindTheme();requestAnimationFrame(()=>animateMenuHeroCube());}
+function home(){const folder=currentSolveFolder()||defaultSolveFolder();const modeLabel=folder.mode==="blind"?"BLIND":folder.mode==="onehand"?"ONE-HAND":"NORMAL";v(`<div class="menu-screen menu-home"><div class="menu-home-frame"><div class="menu-home-logo"><span class="logo-mark">◈</span><div><strong>CUBECLASH</strong><small>${modeLabel} · ${puzzleLabel(folder.puzzle)}</small></div></div><div class="menu-home-cube-shell"><div class="menu-home-cube" id="menuHeroCube"></div><div class="menu-home-hint">DRAG TO ROTATE</div></div><div class="menu-home-actions"><button class="menu-action" data-view="solo"><span>SOLO TIMER</span><span class="arrow">→</span></button><button class="menu-action" data-view="room"><span>CREATE / JOIN 1V1</span><span class="arrow">→</span></button><button class="menu-action" data-view="settings"><span>SETTINGS</span><span class="arrow">→</span></button></div></div></div>`);applyTheme(currentTheme());bindTheme();requestAnimationFrame(()=>renderMenuHeroCube());}
 
 function exposeMatchBridge(){
   window.CubeClashBridge={get state(){return {role:s.role,roomCode:s.roomCode||"",scramble:s.scramble||"",puzzle:s.puzzle||"333",match:s.match||null,opponent:s.opponent||{time:"0.00",status:"WAITING"},phase:s.matchPhase||"ready",theme:localStorage.getItem("cubeclash-theme")||"dark",name:settings.name||""}},get localStream(){return s.localStream||null},get remoteStream(){return s.remoteStream||null}};

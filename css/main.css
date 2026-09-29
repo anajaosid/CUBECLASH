@@ -27,9 +27,23 @@ body.theme-ice .theme-preview.ice{background:linear-gradient(135deg,#edfaff,#b6d
 body.theme-forest .theme-preview.forest{background:linear-gradient(135deg,#0b231a,#1b5a40 52%,#9ad697)}
 body.theme-violet .theme-preview.violet{background:linear-gradient(135deg,#120d1d,#5d4d9c 52%,#c494ff)}
 body.theme-aurora .menu-main,body.theme-aurora .theme-panel,body.theme-sunset .menu-main,body.theme-sunset .theme-panel,body.theme-forest .menu-main,body.theme-forest .theme-panel,body.theme-violet .menu-main,body.theme-violet .theme-panel{box-shadow:0 18px 50px rgba(0,0,0,.18)}
+.brand{gap:12px}.brand-mark{width:26px;height:26px;flex:none;color:var(--text);filter:drop-shadow(0 0 10px color-mix(in srgb,var(--text) 30%,transparent))}.brand-mark rect{fill:currentColor}
 .cube-font{font-family:var(--cube-font)!important;letter-spacing:.02em!important}
 .menu-screen{min-height:calc(100vh - 128px);display:grid;place-items:center;padding:clamp(20px,5vw,70px) 0}
 .menu-wrap{width:min(980px,100%);display:grid;grid-template-columns:1.15fr .85fr;gap:18px}
+.menu-home{min-height:calc(100vh - 128px);padding:clamp(12px,2vw,24px) 0;place-items:stretch}
+.menu-home-frame{min-height:calc(100vh - 128px);display:grid;grid-template-rows:auto minmax(0,1fr) auto;gap:18px;width:min(1200px,100%);margin:0 auto;padding:0 clamp(4px,1vw,10px)}
+.menu-home-logo{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap}
+.menu-home-logo strong{display:block;font:800 12px var(--cube-font);letter-spacing:.16em}
+.menu-home-logo small{display:block;color:var(--muted);font:700 9px var(--mono);letter-spacing:.16em;margin-top:4px}
+.menu-home-cube-shell{min-height:clamp(440px,68vh,860px);display:grid;place-items:center;position:relative;overflow:hidden}
+.menu-home-cube-shell:before{content:"";position:absolute;inset:0;border-radius:30px;background:radial-gradient(circle at center,color-mix(in srgb,var(--panel) 90%,var(--text) 10%),transparent 72%);pointer-events:none;opacity:.8}
+.menu-home-cube{width:min(86vw,88vh);height:min(86vw,88vh);max-width:100%;max-height:100%;display:grid;place-items:center;position:relative;z-index:1}
+.menu-home-cube #menuHeroCube,.menu-home-cube .cube3d-wrap,.menu-home-cube .cube3d{width:100%;height:100%;min-height:min(86vw,88vh)}
+.menu-home-cube .cube3d{transform:rotateX(-28deg) rotateY(-38deg)}
+.menu-home-hint{position:absolute;left:18px;bottom:16px;z-index:2;font:700 9px var(--mono);letter-spacing:.16em;color:var(--muted)}
+.menu-home-actions{display:flex;gap:10px;flex-wrap:wrap;justify-content:space-between;align-items:center}
+.menu-home-actions .menu-action{flex:1 1 220px;max-width:none}
 .menu-main,.theme-panel{border:1px solid var(--line);background:var(--panel);position:relative;overflow:hidden}
 .menu-main{padding:clamp(28px,5vw,64px);min-height:540px;display:flex;flex-direction:column;justify-content:space-between}
 .menu-main:before{content:"";position:absolute;inset:22px;border:1px dashed var(--line);pointer-events:none}
@@ -67,7 +81,7 @@ body.theme-aurora .menu-main,body.theme-aurora .theme-panel,body.theme-sunset .m
 .field select option{background:var(--panel);color:var(--text)}
 .folder-form .field input,.folder-form .field select{font-size:15px;min-height:56px}
 .folder-form .field input::placeholder{color:var(--muted)}
-@media(max-width:760px){.menu-wrap{grid-template-columns:1fr}.menu-main,.theme-panel{min-height:auto}.theme-panel{gap:28px}.menu-screen{padding:10px 0 30px}.menu-main{min-height:500px}.menu-mini-stats{grid-template-columns:repeat(3,1fr)}}
+@media(max-width:760px){.menu-wrap{grid-template-columns:1fr}.menu-main,.theme-panel{min-height:auto}.theme-panel{gap:28px}.menu-screen{padding:10px 0 30px}.menu-main{min-height:500px}.menu-mini-stats{grid-template-columns:repeat(3,1fr)}.menu-home-frame{min-height:calc(100vh - 128px);gap:14px}.menu-home-cube-shell{min-height:clamp(360px,60vh,620px)}.menu-home-cube{width:min(92vw,72vh);height:min(92vw,72vh)}.menu-home-actions{flex-direction:column}.menu-home-actions .menu-action{width:100%}}
 .timer-inline-actions{display:flex;justify-content:flex-end;padding-top:14px}
 .timer-panel-footer{display:flex;gap:16px;justify-content:space-between;flex-wrap:wrap;align-items:end}
 .timer-inline-actions .primary-btn{min-height:34px;padding:0 14px}
