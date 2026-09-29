@@ -273,7 +273,46 @@ function renderMenuHeroCube(root=document.querySelector("#menuHeroCube")){
   if(!root)return;
   render333Cube(root,buildSolvedCubeState(3));
 }
-function stopMenuHeroCube(){}
+let menuHeroLoop=0;
+function stopMenuHeroCube(){menuHeroLoop++;}
+async function animateMenuHeroCube(root=document.querySelector("#menuHeroCube")){
+  if(!root)return;
+  const loopId=++menuHeroLoop;
+  const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+  const scrambleMoves=()=>{
+    const faces=["R","L","U","D","F","B"];
+    const suffix=["","'","2"];
+    const out=[];
+    let lastAxis="";
+    let lastFace="";
+    while(out.length<9){
+      const face=faces[randomInt(faces.length)];
+      const axis=MOVE_AXIS[face];
+      if(axis===lastAxis||face===lastFace)continue;
+      out.push(face+suffix[randomInt(suffix.length)]);
+      lastAxis=axis;
+      lastFace=face;
+    }
+    return out;
+  };
+  const inverseMove=token=>token.endsWith("2")?token:token.endsWith("'")?token.slice(0,-1):`${token}'`;
+  while(loopId===menuHeroLoop){
+    const scramble=scrambleMoves();
+    const solve=scramble.slice().reverse().map(inverseMove);
+    for(let i=0;i<=scramble.length;i++){
+      if(loopId!==menuHeroLoop)return;
+      render333Cube(root,buildCubeState(3,scramble.slice(0,i).join(" ")));
+      await pause(i===0?140:155);
+    }
+    await pause(220);
+    for(let i=0;i<=solve.length;i++){
+      if(loopId!==menuHeroLoop)return;
+      render333Cube(root,buildCubeState(3,[...scramble,...solve.slice(0,i)].join(" ")));
+      await pause(i===0?120:150);
+    }
+    await pause(280);
+  }
+}
 function cubeStateKey(c){return `${c.p.join(",")}:${c.stickers.map(x=>x.normal.join(",")+x.color).sort().join("|")}`}
 
 async function mountCube(){
