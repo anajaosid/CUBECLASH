@@ -61,6 +61,12 @@ body.theme-aurora .menu-main,body.theme-aurora .theme-panel,body.theme-sunset .m
 .theme-option strong{display:block;font:700 11px var(--mono)}
 .theme-option small{display:block;color:var(--muted);font:500 9px var(--mono);margin-top:6px}
 .menu-note{color:var(--muted);font:500 9px/1.6 var(--mono);border-top:1px solid var(--line);padding-top:14px}
+.field input,.field select{appearance:none;-webkit-appearance:none;-moz-appearance:none;border:1px solid var(--line2);background:linear-gradient(180deg,color-mix(in srgb,var(--panel) 92%,var(--text) 8%),var(--panel));color:var(--text);border-radius:14px;min-height:52px;padding:0 16px;font:700 14px var(--sans);letter-spacing:.02em;transition:.18s ease;box-shadow:inset 0 1px 0 rgba(255,255,255,.03)}
+.field input:focus,.field select:focus{outline:none;border-color:var(--text);box-shadow:0 0 0 3px color-mix(in srgb,var(--text) 18%,transparent)}
+.field select{padding-right:42px;background-image:linear-gradient(45deg,transparent 50%,currentColor 50%),linear-gradient(135deg,currentColor 50%,transparent 50%);background-position:calc(100% - 18px) 22px,calc(100% - 12px) 22px;background-size:6px 6px,6px 6px;background-repeat:no-repeat}
+.field select option{background:var(--panel);color:var(--text)}
+.folder-form .field input,.folder-form .field select{font-size:15px;min-height:56px}
+.folder-form .field input::placeholder{color:var(--muted)}
 @media(max-width:760px){.menu-wrap{grid-template-columns:1fr}.menu-main,.theme-panel{min-height:auto}.theme-panel{gap:28px}.menu-screen{padding:10px 0 30px}.menu-main{min-height:500px}.menu-mini-stats{grid-template-columns:repeat(3,1fr)}}
 .timer-inline-actions{display:flex;justify-content:flex-end;padding-top:14px}
 .timer-panel-footer{display:flex;gap:16px;justify-content:space-between;flex-wrap:wrap;align-items:end}

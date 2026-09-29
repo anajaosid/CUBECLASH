@@ -23,10 +23,12 @@ let solveFolders=loadSolveFolders();
 let blindRecord=loadBlindRecord();
 function defaultSolveFolder(){return {id:crypto.randomUUID(),name:"Cube Session",puzzle:"333",mode:"normal",inspection:settings.inspection||15,createdAt:Date.now(),updatedAt:Date.now()}}
 function currentSolveFolder(){return loadActiveSolveFolder()||solveFolders[0]||null}
-function normalizeSolveFolder(folder){const size=puzzleSizeFromCode(folder?.puzzle||"333");return {id:folder?.id||crypto.randomUUID(),name:(folder?.name||"Cube Session").trim().slice(0,32)||"Cube Session",puzzle:puzzleCodeFromSize(size),mode:folder?.mode==="blind"?"blind":"normal",inspection:Math.max(0,Math.min(30,Number(folder?.inspection??settings.inspection??15)||15)),createdAt:folder?.createdAt||Date.now(),updatedAt:Date.now()}}
+function normalizeSolveFolder(folder){const size=puzzleSizeFromCode(folder?.puzzle||"333");return {id:folder?.id||crypto.randomUUID(),name:(folder?.name||"Cube Session").trim().slice(0,32)||"Cube Session",puzzle:puzzleCodeFromSize(size),mode:folder?.mode==="blind"?"blind":folder?.mode==="onehand"?"onehand":"normal",inspection:Math.max(0,Math.min(30,Number(folder?.inspection??settings.inspection??15)||15)),createdAt:folder?.createdAt||Date.now(),updatedAt:Date.now()}}
 function upsertSolveFolder(folder){const next=normalizeSolveFolder(folder);const index=solveFolders.findIndex(x=>x.id===next.id);if(index>=0)solveFolders[index]=next;else solveFolders.unshift(next);solveFolders=solveFolders.slice(0,24);saveSolveFolders(solveFolders);saveActiveSolveFolder(next);return next}
-function applySolveFolder(folder){const next=normalizeSolveFolder(folder);s.solveFolder=next;s.puzzle=next.puzzle;s.blindMode=next.mode==="blind";settings.inspection=next.inspection;return next}
-function solveFolderSummary(folder){if(!folder)return"NO SESSION FOLDER";return `${folder.name} · ${puzzleLabel(folder.puzzle)}${folder.mode==="blind"?" · BLIND":""} · ${folder.inspection}s`}
+function applySolveFolder(folder){const next=normalizeSolveFolder(folder);s.solveFolder=next;s.puzzle=next.puzzle;s.blindMode=next.mode==="blind";s.oneHandMode=next.mode==="onehand";settings.inspection=next.inspection;return next}
+function solveFolderSummary(folder){if(!folder)return"NO SESSION FOLDER";return `${folder.name} · ${puzzleLabel(folder.puzzle)}${folder.mode==="blind"?" · BLIND":folder.mode==="onehand"?" · ONE-HAND":""} · ${folder.inspection}s`}
+const SOUND_URLS={start:"https://actions.google.com/sounds/v1/cartoon/wood_plank_flicks.ogg",solve:"https://actions.google.com/sounds/v1/cartoon/pop.ogg",complete:"https://actions.google.com/sounds/v1/cartoon/clang_and_wobble.ogg"};
+function playSound(name){if(!settings.sound)return;const url=SOUND_URLS[name];if(!url)return;try{const audio=new Audio(url);audio.volume=name==="complete"?.45:.35;audio.play().catch(()=>{});}catch{}}
 function currentTheme(){const current=localStorage.getItem("cubeclash-theme")||"dark";return THEME_PRESETS[current]?current:"dark";}
 function applyTheme(theme){const selected=THEME_PRESETS[theme]?theme:"dark";document.body.classList.remove("theme-light","theme-dark","theme-aurora","theme-sunset","theme-ice","theme-forest","theme-violet");document.body.classList.add(`theme-${selected}`);document.documentElement.style.colorScheme=THEME_PRESETS[selected].scheme;localStorage.setItem("cubeclash-theme",selected);document.querySelectorAll(".theme-option").forEach(x=>x.classList.toggle("active",x.dataset.theme===selected));}
 function bindTheme(){document.querySelectorAll(".theme-option").forEach(b=>b.onclick=()=>applyTheme(b.dataset.theme));}
@@ -267,6 +269,46 @@ function animateOwnScramble(){
   s.replayScramble=()=>{s.scrambleRunId=(s.scrambleRunId||0)+1;animateOwnScramble()};
   play();
 }
+let menuHeroLoop=0;
+function stopMenuHeroCube(){menuHeroLoop++;}
+async function animateMenuHeroCube(root=document.querySelector("#menuHeroCube")){
+  if(!root)return;
+  const loopId=++menuHeroLoop;
+  const size=3;
+  const makeMoves=()=>{
+    const faces=["R","L","U","D","F","B"];
+    const suffix=["","'","2"];
+    const out=[];
+    let lastAxis="";
+    let lastFace="";
+    while(out.length<10){
+      const face=faces[randomInt(faces.length)];
+      const axis=MOVE_AXIS[face];
+      if(axis===lastAxis||face===lastFace)continue;
+      out.push(face+suffix[randomInt(suffix.length)]);
+      lastAxis=axis;lastFace=face;
+    }
+    return out;
+  };
+  const pause=ms=>new Promise(r=>setTimeout(r,ms));
+  const renderSeq=async(tokens,base=[])=>{
+    for(let i=1;i<=tokens.length;i++){
+      if(loopId!==menuHeroLoop)return;
+      renderCube(root,buildCubeState(size,[...base,...tokens.slice(0,i)].join(" ")));
+      await pause(170);
+    }
+  };
+  while(loopId===menuHeroLoop){
+    const scramble=makeMoves();
+    const solve=scramble.slice().reverse().map(t=>t.endsWith("2")?t:t.endsWith("'")?t.slice(0,-1):`${t}'`);
+    renderCube(root,buildSolvedCubeState(size));
+    await pause(280);
+    await renderSeq(scramble);
+    await pause(220);
+    await renderSeq(solve,scramble);
+    await pause(220);
+  }
+}
 function cubeStateKey(c){return `${c.p.join(",")}:${c.stickers.map(x=>x.normal.join(",")+x.color).sort().join("|")}`}
 
 async function mountCube(){
@@ -331,12 +373,12 @@ function cube(){
 function renderSoloView(a=[]){
   const label=puzzleLabel(s.puzzle);
   const solveVisual=s.blindMode&&s.phase==="solving"?`<div class="blind-panel"><div class="blind-head">BLIND SOLVE IN PROGRESS</div><p>Scramble hidden. Focus on recall and execution.</p><div class="blind-records"><div><span>BLIND PB</span><strong>${blindRecord.best!=null?fmt(blindRecord.best):"—"}</strong></div><div><span>BLIND RUNS</span><strong>${blindRecord.solves||0}</strong></div></div></div>`:cube();
-  v(`<div class="timer-page"><div class="timer-top"><div class="section-title" style="flex:1;margin:0"><h1>${label} SOLO TIMER</h1><small>${s.solveFolder?esc(solveFolderSummary(s.solveFolder)):"LOCAL SESSION"}</small></div><div class="room-actions"><select id="p">${puzzleOptionsMarkup(s.puzzle)}</select><button class="ghost-btn" id="new">NEW SCRAMBLE</button><button class="ghost-btn" id="switchFolder">SESSION FOLDER</button><button class="ghost-btn" data-view="home">BACK</button></div></div><div class="scramble-bar"><div class="scramble-text">${s.blindMode&&s.phase==="solving"?"BLIND MODE ACTIVE":esc(s.scramble)}</div><button class="ghost-btn" id="copy">COPY</button></div><div class="timer-layout"><div class="timer-panel"><div class="timer-zone" id="zone" role="button" tabindex="0" aria-label="Solo timer"><div class="timer-status"><div class="timer-value" id="tv">${s.last?.display||"0.00"}</div><div class="timer-label" id="tl">READY</div><div class="timer-hint">SPACE: INSPECTION · HOLD TO START · PRESS TO FINISH${s.blindMode?" · BLIND MODE":""}</div></div></div><div class="timer-panel-footer"><div class="metric"><small>PUZZLE</small><strong>${label}</strong></div><div class="metric"><small>INSPECTION</small><strong>${settings.inspection}s</strong></div><div class="metric"><small>MODE</small><strong>${s.blindMode?"BLIND":"NORMAL"}</strong></div><div class="metric"><small>LAST</small><strong>${s.last?.display||"—"}</strong></div></div><div class="timer-inline-actions"><button class="primary-btn" id="timerAction">START / STOP</button></div></div><div class="cube-panel"><div class="cube-head"><span>SCRAMBLE VISUALIZATION</span><span>${s.blindMode?"BLIND":"3D"}</span></div>${solveVisual}</div></div><div id="soloStats">${soloStatsMarkup(a)}</div></div>`);
+  v(`<div class="timer-page"><div class="timer-top"><div class="section-title" style="flex:1;margin:0"><h1>${label} SOLO TIMER</h1><small>${s.solveFolder?esc(solveFolderSummary(s.solveFolder)):"LOCAL SESSION"}</small></div><div class="room-actions"><select id="p">${puzzleOptionsMarkup(s.puzzle)}</select><button class="ghost-btn" id="new">NEW SCRAMBLE</button><button class="ghost-btn" id="switchFolder">SESSION FOLDER</button><button class="ghost-btn" data-view="home">BACK</button></div></div><div class="scramble-bar"><div class="scramble-text">${s.blindMode&&s.phase==="solving"?"BLIND MODE ACTIVE":esc(s.scramble)}</div><button class="ghost-btn" id="copy">COPY</button></div><div class="timer-layout"><div class="timer-panel"><div class="timer-zone" id="zone" role="button" tabindex="0" aria-label="Solo timer"><div class="timer-status"><div class="timer-value" id="tv">${s.last?.display||"0.00"}</div><div class="timer-label" id="tl">READY</div><div class="timer-hint">SPACE: INSPECTION · HOLD TO START · PRESS TO FINISH${s.blindMode?" · BLIND MODE":s.oneHandMode?" · ONE-HAND MODE":""}</div></div></div><div class="timer-panel-footer"><div class="metric"><small>PUZZLE</small><strong>${label}</strong></div><div class="metric"><small>INSPECTION</small><strong>${settings.inspection}s</strong></div><div class="metric"><small>MODE</small><strong>${s.blindMode?"BLIND":s.oneHandMode?"ONE-HAND":"NORMAL"}</strong></div><div class="metric"><small>LAST</small><strong>${s.last?.display||"—"}</strong></div></div><div class="timer-inline-actions"><button class="primary-btn" id="timerAction">START / STOP</button></div></div><div class="cube-panel"><div class="cube-head"><span>SCRAMBLE VISUALIZATION</span><span>${s.blindMode?"BLIND":s.oneHandMode?"ONE-HAND":"3D"}</span></div>${solveVisual}</div></div><div id="soloStats">${soloStatsMarkup(a)}</div></div>`);
 }
 function folderSetupView(){
   const current=normalizeSolveFolder(currentSolveFolder()||defaultSolveFolder());
   const list=solveFolders.length?solveFolders.slice(0,8):[current];
-  v(`<div class="folder-screen"><div class="folder-card"><div class="folder-kicker">SESSION SETUP / SOLVE FOLDER</div><h1 class="folder-title">NAME THE FOLDER</h1><p class="folder-copy">Pick the cube size and mode before you start. This keeps solo sessions organized and lets blind solves track their own record.</p><div class="folder-form"><div class="field"><label>FOLDER NAME</label><input id="folderName" maxlength="32" value="${esc(current.name)}" placeholder="e.g. MARCH TRAINING"></div><div class="field"><label>PUZZLE SIZE</label><select id="folderPuzzle">${puzzleOptionsMarkup(current.puzzle)}</select></div><div class="field"><label>MODE</label><select id="folderMode"><option value="normal" ${current.mode==="normal"?"selected":""}>NORMAL</option><option value="blind" ${current.mode==="blind"?"selected":""}>BLIND</option></select></div><div class="field"><label>INSPECTION SECONDS</label><input id="folderInspection" type="range" min="0" max="30" step="1" value="${current.inspection}"><div class="scramble-speed-scale"><span>0</span><strong id="folderInspectionValue">${current.inspection}s</strong><span>30</span></div></div></div><div class="folder-actions"><button class="primary-btn" id="folderContinue">OPEN FOLDER</button><button class="ghost-btn" id="folderCancel">BACK</button></div></div><div class="folder-list-card"><div class="folder-list-head"><strong>RECENT FOLDERS</strong><span>${list.length}</span></div><div class="folder-list">${list.map(folder=>`<button class="folder-item" data-folder-id="${folder.id}"><span>${esc(folder.name)}</span><small>${puzzleLabel(folder.puzzle)} · ${folder.mode==="blind"?"BLIND":"NORMAL"} · ${folder.inspection}s</small></button>`).join("")}</div><div class="folder-note">A folder is a local solve session. You can switch folders any time.</div></div></div>`);
+  v(`<div class="folder-screen"><div class="folder-card"><div class="folder-kicker">SESSION SETUP / SOLVE FOLDER</div><h1 class="folder-title">NAME THE FOLDER</h1><p class="folder-copy">Pick the cube size and mode before you start. This keeps solo sessions organized and lets blind solves track their own record.</p><div class="folder-form"><div class="field"><label>FOLDER NAME</label><input id="folderName" maxlength="32" value="${esc(current.name)}" placeholder="e.g. MARCH TRAINING"></div><div class="field"><label>PUZZLE SIZE</label><select id="folderPuzzle">${puzzleOptionsMarkup(current.puzzle)}</select></div><div class="field"><label>MODE</label><select id="folderMode"><option value="normal" ${current.mode==="normal"?"selected":""}>NORMAL</option><option value="blind" ${current.mode==="blind"?"selected":""}>BLIND</option><option value="onehand" ${current.mode==="onehand"?"selected":""}>ONE-HAND</option></select></div><div class="field"><label>INSPECTION SECONDS</label><input id="folderInspection" type="range" min="0" max="30" step="1" value="${current.inspection}"><div class="scramble-speed-scale"><span>0</span><strong id="folderInspectionValue">${current.inspection}s</strong><span>30</span></div></div></div><div class="folder-actions"><button class="primary-btn" id="folderContinue">OPEN FOLDER</button><button class="ghost-btn" id="folderCancel">BACK</button></div></div><div class="folder-list-card"><div class="folder-list-head"><strong>RECENT FOLDERS</strong><span>${list.length}</span></div><div class="folder-list">${list.map(folder=>`<button class="folder-item" data-folder-id="${folder.id}"><span>${esc(folder.name)}</span><small>${puzzleLabel(folder.puzzle)} · ${folder.mode==="blind"?"BLIND":folder.mode==="onehand"?"ONE-HAND":"NORMAL"} · ${folder.inspection}s</small></button>`).join("")}</div><div class="folder-note">A folder is a local solve session. You can switch folders any time.</div></div></div>`);
   const name=document.querySelector("#folderName");
   const puzzle=document.querySelector("#folderPuzzle");
   const mode=document.querySelector("#folderMode");
@@ -397,6 +439,7 @@ function startInspection(){
   s.penalty="";
   s.inspectionStart=performance.now();
   set(settings.inspection*1000,"INSPECTION");
+  playSound("start");
   loop();
 }
 function startSolve(){
@@ -406,6 +449,7 @@ function startSolve(){
   s.phase="solving";
   s.solveStart=performance.now();
   set(0,"SOLVING");
+  playSound("solve");
   if(s.blindMode){
     const scrambleText=document.querySelector(".scramble-text");
     const cubePanel=document.querySelector(".cube-panel");
@@ -422,6 +466,7 @@ async function finish(){
   s.phase="stopped";
   const display=s.penalty==="DNF"?"DNF":fmt(ms+(s.penalty==="+2"?2000:0));
   s.last={display};
+  playSound("complete");
   if(s.blindMode&&Number.isFinite(ms)){
     blindRecord.solves=(blindRecord.solves||0)+1;
     if(blindRecord.best==null||ms<blindRecord.best)blindRecord.best=ms;
@@ -516,7 +561,7 @@ function bindSolo(){
 }
 function tutorial(){v(`<div class="tutorial-screen"><div class="tutorial-card"><div class="tutorial-kicker">FIRST TIME SETUP / 01</div><h1 class="tutorial-title">HOW CUBECLASH WORKS</h1><p class="tutorial-intro">A quick guide before you start. You can reopen this tutorial later from the menu.</p><div class="tutorial-steps"><article><span>01</span><h2>CHOOSE A PUZZLE</h2><p>Select 2×2 through 7×7. CubeClash generates a new internally generated scramble for every solve.</p></article><article><span>02</span><h2>READ THE SCRAMBLE</h2><p>The 3D cube shows the exact state produced by the scramble, so the visual matches the moves shown above it.</p></article><article><span>03</span><h2>INSPECTION</h2><p>Press Space, Enter, or tap the timer once to begin inspection. Under 15 seconds is normal, 15 to under 17 seconds is +2, and 17 seconds or more is DNF.</p></article><article><span>04</span><h2>SOLVE</h2><p>During inspection, hold Space or Enter and release after the hold indicator appears to start the solve. Press the key again to finish. Your result is saved on this device.</p></article><article><span>05</span><h2>1V1 ROOMS</h2><p>For beta, rooms use a browser-to-browser WebRTC connection. The host and guest exchange connection data to connect.</p></article><article><span>06</span><h2>YOUR DATA</h2><p>Solves and settings stay in your browser. Use JSON export if you want a backup or to move your timer data.</p></article></div><div class="tutorial-actions"><button class="primary-btn" id="tutorialStart">I UNDERSTAND — OPEN MENU</button></div></div></div>`);document.querySelector("#tutorialStart").onclick=()=>{localStorage.setItem("cubeclash-tutorial-seen","1");home()}}
 function dashboard(){v(`<div class="hero"><div class="hero-grid"><div><div class="section-title"><small>01 / SPEEDCUBING PLATFORM</small><small>BETA</small></div><h1 class="hero-title cube-font">CUBE<span>CLASH</span></h1><p class="hero-copy">A smooth responsive speedcubing timer for 2×2 through 7×7 with an internal scramble engine, real 3D scramble visualization, local history, installable PWA support, and peer-to-peer 1v1 rooms.</p><div class="hero-actions"><button class="primary-btn" data-view="solo">SOLO TIMER</button><button class="ghost-btn" data-view="room">CREATE / JOIN 1V1</button></div></div><div class="technical-card"><div class="spec-list"><div class="spec"><span>PUZZLES</span><span>2×2 / 7×7</span></div><div class="spec"><span>SCRAMBLES</span><span>INTERNAL ENGINE</span></div><div class="spec"><span>SYNC</span><span>WEBRTC P2P</span></div><div class="spec"><span>STORAGE</span><span>INDEXEDDB</span></div><div class="spec"><span>INSTALL</span><span>PWA</span></div></div></div></div></div>`)}
-function home(){const folder=currentSolveFolder()||defaultSolveFolder();v(`<div class="menu-screen"><div class="menu-wrap"><section class="menu-main"><div class="menu-content"><div class="menu-kicker">WELCOME / CUBECLASH BETA</div><h1 class="menu-title">CUBE<span>CLASH</span></h1><p class="menu-sub">Train faster, organize your sessions, and jump into solo or online cube practice from one polished dashboard.</p><div class="menu-badges"><span>${puzzleLabel(folder.puzzle)}</span><span>${folder.mode==="blind"?"BLIND":"NORMAL"}</span><span>STATS</span><span>ROOMS</span></div><div class="menu-actions"><button class="menu-action" data-view="solo"><span>SOLO TIMER</span><span class="arrow">→</span></button><button class="menu-action" data-view="room"><span>CREATE / JOIN 1V1</span><span class="arrow">→</span></button><button class="menu-action" data-view="settings"><span>SETTINGS</span><span class="arrow">→</span></button></div></div><div class="menu-mini-stats"><div class="mini-stat"><span>SESSION</span><strong>${esc(folder.name)}</strong></div><div class="mini-stat"><span>PUZZLE</span><strong>${puzzleLabel(folder.puzzle)}</strong></div><div class="mini-stat"><span>MODE</span><strong>${folder.mode==="blind"?"BLIND":"NORMAL"}</strong></div></div></section><aside class="menu-visual"><div class="menu-visual-head"><span>ACTIVE FOLDER</span><strong>${esc(folder.name)}</strong></div><div class="menu-visual-cube"><span class="sticker-face face-W"></span><span class="sticker-face face-R"></span><span class="sticker-face face-B"></span><span class="sticker-face face-Y"></span><span class="sticker-face face-O"></span><span class="sticker-face face-G"></span></div><div class="menu-visual-grid"><div><small>INSPECTION</small><strong>${folder.inspection}s</strong></div><div><small>SIZE</small><strong>${puzzleLabel(folder.puzzle)}</strong></div><div><small>SESSION</small><strong>${folder.mode==="blind"?"BLIND":"STANDARD"}</strong></div></div></aside></div></div>`);applyTheme(currentTheme());bindTheme();}
+function home(){const folder=currentSolveFolder()||defaultSolveFolder();const modeLabel=folder.mode==="blind"?"BLIND":folder.mode==="onehand"?"ONE-HAND":"NORMAL";const sessionLabel=folder.mode==="blind"?"BLIND":folder.mode==="onehand"?"ONE-HAND":"STANDARD";v(`<div class="menu-screen"><div class="menu-wrap"><section class="menu-main"><div class="menu-content"><div class="menu-kicker">WELCOME / CUBECLASH BETA</div><h1 class="menu-title">CUBE<span>CLASH</span></h1><p class="menu-sub">Train faster, organize your sessions, and jump into solo or online cube practice from one polished dashboard.</p><div class="menu-badges"><span>${puzzleLabel(folder.puzzle)}</span><span>${modeLabel}</span><span>STATS</span><span>ROOMS</span></div><div class="menu-actions"><button class="menu-action" data-view="solo"><span>SOLO TIMER</span><span class="arrow">→</span></button><button class="menu-action" data-view="room"><span>CREATE / JOIN 1V1</span><span class="arrow">→</span></button><button class="menu-action" data-view="settings"><span>SETTINGS</span><span class="arrow">→</span></button></div></div><div class="menu-mini-stats"><div class="mini-stat"><span>SESSION</span><strong>${esc(folder.name)}</strong></div><div class="mini-stat"><span>PUZZLE</span><strong>${puzzleLabel(folder.puzzle)}</strong></div><div class="mini-stat"><span>MODE</span><strong>${modeLabel}</strong></div></div></section><aside class="menu-visual"><div class="menu-visual-head"><span>ACTIVE FOLDER</span><strong>${esc(folder.name)}</strong></div><div class="menu-visual-cube" id="menuHeroCube"></div><div class="menu-visual-grid"><div><small>INSPECTION</small><strong>${folder.inspection}s</strong></div><div><small>SIZE</small><strong>${puzzleLabel(folder.puzzle)}</strong></div><div><small>SESSION</small><strong>${sessionLabel}</strong></div></div></aside></div></div>`);applyTheme(currentTheme());bindTheme();requestAnimationFrame(()=>animateMenuHeroCube());}
 
 function exposeMatchBridge(){
   window.CubeClashBridge={get state(){return {role:s.role,roomCode:s.roomCode||"",scramble:s.scramble||"",puzzle:s.puzzle||"333",match:s.match||null,opponent:s.opponent||{time:"0.00",status:"WAITING"},phase:s.matchPhase||"ready",theme:localStorage.getItem("cubeclash-theme")||"dark",name:settings.name||""}},get localStream(){return s.localStream||null},get remoteStream(){return s.remoteStream||null}};
@@ -968,6 +1013,7 @@ function settingsView(){v(`<div class="section-title"><h1>SETTINGS</h1><small>LO
 async function nav(x){
   if(window._cubeClashSoloKeyHandler){document.removeEventListener("keydown",window._cubeClashSoloKeyHandler,true);window._cubeClashSoloKeyHandler=null;}
   if(window._cubeClashSoloKeyUpHandler){document.removeEventListener("keyup",window._cubeClashSoloKeyUpHandler,true);window._cubeClashSoloKeyUpHandler=null;}
+  stopMenuHeroCube();
   if(s.room||s.localStream||s.remoteStream)cleanupMatchMedia();
   s.room=null;s.role=null;s.roomCode="";
   try{
