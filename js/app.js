@@ -3,8 +3,30 @@ import {bindSolveDeleteButtons} from "./solo-actions.js";
 import {MOVES,CUBE_COLORS,MOVE_AXIS,MOVE_LAYER,MOVE_SIGN,COLOR_HEX,buildSolvedCubeState,applyMove,buildCubeState,inverseScramble,auditCubeEngine} from "./cube-engine.js";
 import {wipeCubeClashData} from "./reset.js";
 import {P2PRoom} from "./p2p.js";
-const app=document.querySelector("#app"),toastEl=document.querySelector("#toast"); app.dataset.started="1";let deferredInstall=null;let settings={};try{settings=JSON.parse(localStorage.getItem("cubeclash-settings")||"{}")}catch{settings={}}settings.inspection??=15;settings.sound??=true;settings.name??="";settings.scrambleSpeed??=1;let s={puzzle:"333",scramble:"",phase:"ready",matchPhase:"ready",inspectionStart:0,solveStart:0,raf:0,last:null,room:null,role:null,opponent:{time:"0.00",status:"WAITING"},round:1,mediaQuality:"FAIR",mediaStatsRaf:0,nextRoundReady:false,matchHistory:[]};
+const app=document.querySelector("#app"),toastEl=document.querySelector("#toast"); app.dataset.started="1";let deferredInstall=null;let settings={};try{settings=JSON.parse(localStorage.getItem("cubeclash-settings")||"{}")}catch{settings={}}settings.inspection??=15;settings.sound??=true;settings.name??="";settings.scrambleSpeed??=1;let s={puzzle:"333",scramble:"",phase:"ready",matchPhase:"ready",inspectionStart:0,solveStart:0,raf:0,last:null,room:null,role:null,opponent:{time:"0.00",status:"WAITING"},round:1,mediaQuality:"FAIR",mediaStatsRaf:0,nextRoundReady:false,matchHistory:[],blindMode:false,solveFolder:null};
 const THEME_PRESETS={dark:{label:"Midnight",note:"Obsidian / High contrast",scheme:"dark"},light:{label:"Paper",note:"Clean / Light grid",scheme:"light"},aurora:{label:"Aurora",note:"Electric cyan / violet",scheme:"dark"},sunset:{label:"Sunset",note:"Warm amber / coral",scheme:"dark"},ice:{label:"Ice",note:"Cool blue / silver",scheme:"light"},forest:{label:"Forest",note:"Deep green / moss",scheme:"dark"},violet:{label:"Violet",note:"Neon purple / midnight",scheme:"dark"}};
+const SOLVE_FOLDERS_KEY="cubeclash-solve-folders";
+const ACTIVE_SOLVE_FOLDER_KEY="cubeclash-active-solve-folder";
+const BLIND_RECORD_KEY="cubeclash-blind-record";
+const PUZZLE_SIZES=[2,3,4,5,6,7];
+function puzzleSizeFromCode(code){const size=Number(String(code||"333").charAt(0));return Number.isFinite(size)&&size>=2&&size<=7?size:3}
+function puzzleCodeFromSize(size){return `${size}${size}${size}`}
+function puzzleLabel(code){const size=puzzleSizeFromCode(code);return `${size}×${size}`}
+function puzzleOptionsMarkup(selected="333"){const active=puzzleSizeFromCode(selected);return PUZZLE_SIZES.map(size=>`<option value="${puzzleCodeFromSize(size)}" ${active===size?"selected":""}>${size}×${size}</option>`).join("")}
+function loadSolveFolders(){try{const data=JSON.parse(localStorage.getItem(SOLVE_FOLDERS_KEY)||"[]");return Array.isArray(data)?data:[]}catch{return[]}}
+function saveSolveFolders(folders){localStorage.setItem(SOLVE_FOLDERS_KEY,JSON.stringify(folders.slice(0,24)))}
+function loadActiveSolveFolder(){try{return JSON.parse(localStorage.getItem(ACTIVE_SOLVE_FOLDER_KEY)||"null")}catch{return null}}
+function saveActiveSolveFolder(folder){localStorage.setItem(ACTIVE_SOLVE_FOLDER_KEY,JSON.stringify(folder))}
+function loadBlindRecord(){try{return JSON.parse(localStorage.getItem(BLIND_RECORD_KEY)||"{\"best\":null,\"solves\":0}")}catch{return{best:null,solves:0}}}
+function saveBlindRecord(record){localStorage.setItem(BLIND_RECORD_KEY,JSON.stringify(record))}
+let solveFolders=loadSolveFolders();
+let blindRecord=loadBlindRecord();
+function defaultSolveFolder(){return {id:crypto.randomUUID(),name:"Cube Session",puzzle:"333",mode:"normal",inspection:settings.inspection||15,createdAt:Date.now(),updatedAt:Date.now()}}
+function currentSolveFolder(){return loadActiveSolveFolder()||solveFolders[0]||null}
+function normalizeSolveFolder(folder){const size=puzzleSizeFromCode(folder?.puzzle||"333");return {id:folder?.id||crypto.randomUUID(),name:(folder?.name||"Cube Session").trim().slice(0,32)||"Cube Session",puzzle:puzzleCodeFromSize(size),mode:folder?.mode==="blind"?"blind":"normal",inspection:Math.max(0,Math.min(30,Number(folder?.inspection??settings.inspection??15)||15)),createdAt:folder?.createdAt||Date.now(),updatedAt:Date.now()}}
+function upsertSolveFolder(folder){const next=normalizeSolveFolder(folder);const index=solveFolders.findIndex(x=>x.id===next.id);if(index>=0)solveFolders[index]=next;else solveFolders.unshift(next);solveFolders=solveFolders.slice(0,24);saveSolveFolders(solveFolders);saveActiveSolveFolder(next);return next}
+function applySolveFolder(folder){const next=normalizeSolveFolder(folder);s.solveFolder=next;s.puzzle=next.puzzle;s.blindMode=next.mode==="blind";settings.inspection=next.inspection;return next}
+function solveFolderSummary(folder){if(!folder)return"NO SESSION FOLDER";return `${folder.name} · ${puzzleLabel(folder.puzzle)}${folder.mode==="blind"?" · BLIND":""} · ${folder.inspection}s`}
 function currentTheme(){const current=localStorage.getItem("cubeclash-theme")||"dark";return THEME_PRESETS[current]?current:"dark";}
 function applyTheme(theme){const selected=THEME_PRESETS[theme]?theme:"dark";document.body.classList.remove("theme-light","theme-dark","theme-aurora","theme-sunset","theme-ice","theme-forest","theme-violet");document.body.classList.add(`theme-${selected}`);document.documentElement.style.colorScheme=THEME_PRESETS[selected].scheme;localStorage.setItem("cubeclash-theme",selected);document.querySelectorAll(".theme-option").forEach(x=>x.classList.toggle("active",x.dataset.theme===selected));}
 function bindTheme(){document.querySelectorAll(".theme-option").forEach(b=>b.onclick=()=>applyTheme(b.dataset.theme));}
@@ -12,9 +34,10 @@ function themeOptionMarkup(name,label,note){return `<button class="theme-option"
 function themePanel(){return `<div class="theme-panel"><div class="theme-head"><strong>SELECT THEME</strong><span>APPEARANCE</span></div><div class="theme-options">${["dark","light","aurora","sunset","ice","forest","violet"].map(name=>themeOptionMarkup(name,THEME_PRESETS[name].label,THEME_PRESETS[name].note)).join("")}</div><div class="menu-note">YOUR THEME IS SAVED ON THIS DEVICE. YOU CAN CHANGE IT LATER IN SETTINGS.</div></div>`}
 const toast=x=>{toastEl.textContent=x;toastEl.classList.add("show");clearTimeout(toast.t);toast.t=setTimeout(()=>toastEl.classList.remove("show"),1800)};const esc=x=>String(x).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));const fmt=ms=>(ms/1000).toFixed(2);function v(x){app.innerHTML=`<section class="view">${x}</section>`}function randomInt(max){return Math.floor(Math.random()*max)}
 function ownScramble(){
-  const faces=MOVES[s.puzzle]||MOVES[333];
+  const size=puzzleSizeFromCode(s.puzzle);
+  const faces=MOVES[333];
   const suffix=["","'","2"];
-  const count=s.puzzle==="222"?11:25;
+  const count=size===2?11:size===3?25:size===4?28:size===5?32:size===6?36:40;
   const out=[];
   let lastAxis="";
   let lastFace="";
@@ -31,13 +54,15 @@ function normalizeWcaScramble(scramble){return String(scramble).replace(/\s+/g,"
 function validCubeScramble(text){
   const tokens=normalizeWcaScramble(text).split(/\s+/).filter(Boolean);
   if(!tokens.length)return false;
-  const max=s.puzzle==="222"?30:40;
+  const size=puzzleSizeFromCode(s.puzzle);
+  const max=size===2?30:size===3?40:size===4?55:size===5?65:size===6?75:85;
   return tokens.length<=max&&tokens.every(t=>/^[RLUDFB](2|')?$/.test(t));
 }
 function randomScramble(){
   let text=ownScramble();
   let guard=0;
-  while((!validCubeScramble(text)||!auditCubeEngine(s.puzzle==="222"?2:3,text))&&guard++<20)text=ownScramble();
+  const size=puzzleSizeFromCode(s.puzzle);
+  while((!validCubeScramble(text)||!auditCubeEngine(size,text))&&guard++<20)text=ownScramble();
   return text;
 }
 async function scr(){s.scramble=randomScramble();return s.scramble}
@@ -116,14 +141,33 @@ function bindCubeDrag(root,model,rx0,ry0){
   const end=e=>{if(!dragging)return;dragging=false;root.style.cursor="grab";if(e?.pointerId!=null)try{root.releasePointerCapture(e.pointerId)}catch{}};
   root.onpointerup=end;root.onpointercancel=end;
 }
-function renderCube(root=document.querySelector("#cube3d"),state=buildCubeState(s.puzzle==="222"?2:3,s.scramble)){
+function renderCube(root=document.querySelector("#cube3d"),state=buildCubeState(puzzleSizeFromCode(s.puzzle),s.scramble)){
   if(!root)return;
-  const size=s.puzzle==="222"?2:3;
-  if(size===2)render222Cube(root,state);else render333Cube(root,state);
-  return root.querySelector(size===2?".cube-model-222":".cube-model-333");
+  const size=puzzleSizeFromCode(s.puzzle);
+  if(size===2)render222Cube(root,state);else if(size===3)render333Cube(root,state);else renderGenericCube(root,size,state);
+  return root.querySelector(size===2?".cube-model-222":size===3?".cube-model-333":`.cube-model-${size}x${size}`);
 }
 
-function cubeMoveDuration(){const base=s.puzzle==="222"?260:220;const speed=Math.max(.05,Math.min(2,Number(settings.scrambleSpeed)||1));return Math.round(base/speed)}
+function renderGenericCube(root,size,state=buildCubeState(size,s.scramble)){
+  const cubie=Math.max(18,Math.floor(250/size));
+  const gap=Math.max(2,Math.floor(cubie*.08));
+  const pitch=cubie+gap;
+  const half=cubie/2;
+  const spread=pitch*(size-1)/2;
+  root.innerHTML="";
+  root.style.cssText=`position:relative;width:100%;height:100%;min-height:${Math.max(380,72*size)}px;display:grid;place-items:center;perspective:1250px;overflow:hidden;touch-action:none;user-select:none;`;
+  const model=document.createElement("div");model.className=`cube-model cube-model-${size}x${size}`;
+  model.style.cssText=`position:relative;width:0;height:0;transform-style:preserve-3d;transform:rotateX(-18deg) rotateY(0deg);will-change:transform;`;
+  root.appendChild(model);
+  for(const c of state){
+    const stickers=new Map(c.stickers.map(st=>[st.normal.join(","),st.color]));
+    const piece=makeCubePiece(c,size,half,stickers,`position:absolute;left:${-half}px;top:${-half}px;width:${cubie}px;height:${cubie}px;transform-style:preserve-3d;transform:translate3d(${c.p[0]*spread}px,${-c.p[1]*spread}px,${c.p[2]*spread}px);background:#111;border:2px solid #030303;border-radius:${Math.max(5,9-size)}px;box-shadow:inset 0 0 0 1px #383838,inset 0 -5px 9px #000b,0 4px 8px #0008;`);
+    model.appendChild(piece);
+  }
+  bindCubeDrag(root,model,-18,0);
+}
+
+function cubeMoveDuration(){const size=puzzleSizeFromCode(s.puzzle);const base=size===2?260:size===3?220:size<=5?200:180;const speed=Math.max(.05,Math.min(2,Number(settings.scrambleSpeed)||1));return Math.round(base/speed)}
 function cubeMoveAngle(token, quarterSignOverride=null){
   const face=token[0];
   const axis=MOVE_AXIS[face];
@@ -136,8 +180,11 @@ function cubeMoveAngle(token, quarterSignOverride=null){
   return {axis,angle:cssQuarter*90};
 }
 function cubePosition(c,size){
-  const cubie=size===2?82:54,gap=size===2?4:3,pitch=cubie+gap;
-  return [c.p[0]*(size===2?pitch/2:pitch),-c.p[1]*(size===2?pitch/2:pitch),c.p[2]*(size===2?pitch/2:pitch)];
+  const cubie=size===2?82:size===3?54:Math.max(18,Math.floor(250/size));
+  const gap=size===2?4:size===3?3:Math.max(2,Math.floor(cubie*.08));
+  const pitch=cubie+gap;
+  const spread=pitch*(size-1)/2;
+  return [c.p[0]*spread,-c.p[1]*spread,c.p[2]*spread];
 }
 function tokenQuarterMoves(token){
   const face=token[0];
@@ -157,7 +204,7 @@ function applyQuarterToTokens(tokens,index,face,direction,quarterIndex){
 function animateOwnScramble(){
   const root=document.querySelector("#cube3d");
   if(!root)return;
-  const size=s.puzzle==="222"?2:3;
+  const size=puzzleSizeFromCode(s.puzzle);
   const tokens=s.scramble.trim().split(/\s+/).filter(Boolean);
   const runId=(s.scrambleRunId||0)+1;
   s.scrambleRunId=runId;
@@ -225,7 +272,7 @@ function cubeStateKey(c){return `${c.p.join(",")}:${c.stickers.map(x=>x.normal.j
 async function mountCube(){
   const h=document.querySelector("#cube3d");
   if(!h)return;
-  renderCube(h,buildSolvedCubeState(s.puzzle==="222"?2:3));
+  renderCube(h,buildSolvedCubeState(puzzleSizeFromCode(s.puzzle)));
   animateOwnScramble();
 }
 
@@ -263,7 +310,8 @@ function withTimeout(promise,ms,fallback){
 }
 function soloStatsMarkup(a=[]){
   const averages=[5,12,50,100,1000];
-  return `<div class="stats-panel"><div class="stats-section-head"><div><div class="stats-kicker">CURRENT PUZZLE</div><h2>${s.puzzle==="333"?"3×3":"2×2"} STATISTICS</h2></div><span class="stats-note">LATEST SOLVES FIRST</span></div><div class="stats-grid stats-grid-wide"><div class="stat-box"><small>SOLVES</small><strong>${a.length}</strong></div><div class="stat-box"><small>BEST</small><strong>${bestSolve(a)}</strong></div>${averages.map(n=>`<div class="stat-box"><small>AO${n}</small><strong>${rollingAverage(a,n)}</strong></div>`).join("")}</div><div class="graph-panel"><div class="graph-head"><div><div class="stats-kicker">TIME TREND</div><h3>LAST 50 SOLVES</h3></div><span class="stats-note">+2 INCLUDED · DNF EXCLUDED</span></div>${buildTimeGraph(a)}</div><div class="solves-list"><div class="solve-list-head"><span>RECENT SOLVES</span><span>${a.length} TOTAL</span></div>${a.slice(0,12).map((x,i)=>`<div class="solve-row"><span>${a.length-i}</span><span class="solve-scramble">${esc(x.scramble)}</span><span class="solve-time">${esc(x.display)}</span><span class="muted solve-puzzle">${x.puzzle==="333"?"3×3":"2×2"}</span><button class="delete-solve-btn" data-delete-solve="${esc(x.id)}" title="Delete this solve" aria-label="Delete solve">DELETE</button></div>`).join("")||'<div class="empty">NO SOLVES YET</div>'}</div></div>`;
+  const label=puzzleLabel(s.puzzle);
+  return `<div class="stats-panel"><div class="stats-section-head"><div><div class="stats-kicker">CURRENT PUZZLE</div><h2>${label} STATISTICS</h2></div><span class="stats-note">${s.blindMode?"BLIND MODE":"LATEST SOLVES FIRST"}</span></div><div class="stats-grid stats-grid-wide"><div class="stat-box"><small>SOLVES</small><strong>${a.length}</strong></div><div class="stat-box"><small>BEST</small><strong>${bestSolve(a)}</strong></div>${s.blindMode?`<div class="stat-box"><small>BLIND PB</small><strong>${blindRecord.best!=null?fmt(blindRecord.best):"—"}</strong></div><div class="stat-box"><small>BLIND RUNS</small><strong>${blindRecord.solves||0}</strong></div>`:""}${averages.map(n=>`<div class="stat-box"><small>AO${n}</small><strong>${rollingAverage(a,n)}</strong></div>`).join("")}</div><div class="graph-panel"><div class="graph-head"><div><div class="stats-kicker">TIME TREND</div><h3>LAST 50 SOLVES</h3></div><span class="stats-note">+2 INCLUDED · DNF EXCLUDED</span></div>${buildTimeGraph(a)}</div><div class="solves-list"><div class="solve-list-head"><span>RECENT SOLVES</span><span>${a.length} TOTAL</span></div>${a.slice(0,12).map((x,i)=>`<div class="solve-row"><span>${a.length-i}</span><span class="solve-scramble">${esc(x.scramble)}</span><span class="solve-time">${esc(x.display)}</span><span class="muted solve-puzzle">${puzzleLabel(x.puzzle)}</span><button class="delete-solve-btn" data-delete-solve="${esc(x.id)}" title="Delete this solve" aria-label="Delete solve">DELETE</button></div>`).join("")||'<div class="empty">NO SOLVES YET</div>'}</div></div>`;
 }
 function cube(){
   const speed=Math.max(.05,Math.min(2,Number(settings.scrambleSpeed)||1));
@@ -281,7 +329,38 @@ function cube(){
 }
 
 function renderSoloView(a=[]){
-  v(`<div class="timer-page"><div class="timer-top"><div class="section-title" style="flex:1;margin:0"><h1>SOLO TIMER</h1><small>LOCAL SESSION</small></div><div class="room-actions"><select id="p"><option value="333" ${s.puzzle==="333"?"selected":""}>3×3</option><option value="222" ${s.puzzle==="222"?"selected":""}>2×2</option></select><button class="ghost-btn" id="new">NEW SCRAMBLE</button><button class="ghost-btn" data-view="home">BACK</button></div></div><div class="scramble-bar"><div class="scramble-text">${esc(s.scramble)}</div><button class="ghost-btn" id="copy">COPY</button></div><div class="timer-layout"><div class="timer-panel"><div class="timer-zone" id="zone" role="button" tabindex="0" aria-label="Solo timer"><div class="timer-status"><div class="timer-value" id="tv">${s.last?.display||"0.00"}</div><div class="timer-label" id="tl">READY</div><div class="timer-hint">SPACE: INSPECTION · HOLD TO START · PRESS TO FINISH</div></div></div><div class="timer-panel-footer"><div class="metric"><small>PUZZLE</small><strong>${s.puzzle==="333"?"3×3":"2×2"}</strong></div><div class="metric"><small>INSPECTION</small><strong>${settings.inspection}s</strong></div><div class="metric"><small>LAST</small><strong>${s.last?.display||"—"}</strong></div></div><div class="timer-inline-actions"><button class="primary-btn" id="timerAction">START / STOP</button></div></div><div class="cube-panel"><div class="cube-head"><span>SCRAMBLE VISUALIZATION</span><span>3D</span></div>${cube()}</div></div><div id="soloStats">${soloStatsMarkup(a)}</div></div>`);
+  const label=puzzleLabel(s.puzzle);
+  const solveVisual=s.blindMode&&s.phase==="solving"?`<div class="blind-panel"><div class="blind-head">BLIND SOLVE IN PROGRESS</div><p>Scramble hidden. Focus on recall and execution.</p><div class="blind-records"><div><span>BLIND PB</span><strong>${blindRecord.best!=null?fmt(blindRecord.best):"—"}</strong></div><div><span>BLIND RUNS</span><strong>${blindRecord.solves||0}</strong></div></div></div>`:cube();
+  v(`<div class="timer-page"><div class="timer-top"><div class="section-title" style="flex:1;margin:0"><h1>${label} SOLO TIMER</h1><small>${s.solveFolder?esc(solveFolderSummary(s.solveFolder)):"LOCAL SESSION"}</small></div><div class="room-actions"><select id="p">${puzzleOptionsMarkup(s.puzzle)}</select><button class="ghost-btn" id="new">NEW SCRAMBLE</button><button class="ghost-btn" id="switchFolder">SESSION FOLDER</button><button class="ghost-btn" data-view="home">BACK</button></div></div><div class="scramble-bar"><div class="scramble-text">${s.blindMode&&s.phase==="solving"?"BLIND MODE ACTIVE":esc(s.scramble)}</div><button class="ghost-btn" id="copy">COPY</button></div><div class="timer-layout"><div class="timer-panel"><div class="timer-zone" id="zone" role="button" tabindex="0" aria-label="Solo timer"><div class="timer-status"><div class="timer-value" id="tv">${s.last?.display||"0.00"}</div><div class="timer-label" id="tl">READY</div><div class="timer-hint">SPACE: INSPECTION · HOLD TO START · PRESS TO FINISH${s.blindMode?" · BLIND MODE":""}</div></div></div><div class="timer-panel-footer"><div class="metric"><small>PUZZLE</small><strong>${label}</strong></div><div class="metric"><small>INSPECTION</small><strong>${settings.inspection}s</strong></div><div class="metric"><small>MODE</small><strong>${s.blindMode?"BLIND":"NORMAL"}</strong></div><div class="metric"><small>LAST</small><strong>${s.last?.display||"—"}</strong></div></div><div class="timer-inline-actions"><button class="primary-btn" id="timerAction">START / STOP</button></div></div><div class="cube-panel"><div class="cube-head"><span>SCRAMBLE VISUALIZATION</span><span>${s.blindMode?"BLIND":"3D"}</span></div>${solveVisual}</div></div><div id="soloStats">${soloStatsMarkup(a)}</div></div>`);
+}
+function folderSetupView(){
+  const current=normalizeSolveFolder(currentSolveFolder()||defaultSolveFolder());
+  const list=solveFolders.length?solveFolders.slice(0,8):[current];
+  v(`<div class="folder-screen"><div class="folder-card"><div class="folder-kicker">SESSION SETUP / SOLVE FOLDER</div><h1 class="folder-title">NAME THE FOLDER</h1><p class="folder-copy">Pick the cube size and mode before you start. This keeps solo sessions organized and lets blind solves track their own record.</p><div class="folder-form"><div class="field"><label>FOLDER NAME</label><input id="folderName" maxlength="32" value="${esc(current.name)}" placeholder="e.g. MARCH TRAINING"></div><div class="field"><label>PUZZLE SIZE</label><select id="folderPuzzle">${puzzleOptionsMarkup(current.puzzle)}</select></div><div class="field"><label>MODE</label><select id="folderMode"><option value="normal" ${current.mode==="normal"?"selected":""}>NORMAL</option><option value="blind" ${current.mode==="blind"?"selected":""}>BLIND</option></select></div><div class="field"><label>INSPECTION SECONDS</label><input id="folderInspection" type="range" min="0" max="30" step="1" value="${current.inspection}"><div class="scramble-speed-scale"><span>0</span><strong id="folderInspectionValue">${current.inspection}s</strong><span>30</span></div></div></div><div class="folder-actions"><button class="primary-btn" id="folderContinue">OPEN FOLDER</button><button class="ghost-btn" id="folderCancel">BACK</button></div></div><div class="folder-list-card"><div class="folder-list-head"><strong>RECENT FOLDERS</strong><span>${list.length}</span></div><div class="folder-list">${list.map(folder=>`<button class="folder-item" data-folder-id="${folder.id}"><span>${esc(folder.name)}</span><small>${puzzleLabel(folder.puzzle)} · ${folder.mode==="blind"?"BLIND":"NORMAL"} · ${folder.inspection}s</small></button>`).join("")}</div><div class="folder-note">A folder is a local solve session. You can switch folders any time.</div></div></div>`);
+  const name=document.querySelector("#folderName");
+  const puzzle=document.querySelector("#folderPuzzle");
+  const mode=document.querySelector("#folderMode");
+  const inspection=document.querySelector("#folderInspection");
+  const inspectionValue=document.querySelector("#folderInspectionValue");
+  const syncLabel=()=>{if(inspectionValue)inspectionValue.textContent=`${inspection.value}s`;};
+  const currentData=()=>normalizeSolveFolder({id:current.id,name:name.value,puzzle:puzzle.value,mode:mode.value,inspection:inspection.value,createdAt:current.createdAt});
+  inspection?.addEventListener("input",syncLabel);
+  document.querySelectorAll("[data-folder-id]").forEach(btn=>btn.addEventListener("click",()=>{
+    const folder=solveFolders.find(x=>x.id===btn.dataset.folderId);
+    if(!folder)return;
+    name.value=folder.name;
+    puzzle.value=folder.puzzle;
+    mode.value=folder.mode;
+    inspection.value=String(folder.inspection);
+    syncLabel();
+  }));
+  document.querySelector("#folderCancel").onclick=()=>home();
+  document.querySelector("#folderContinue").onclick=async()=>{
+    const folder=upsertSolveFolder(currentData());
+    applySolveFolder(folder);
+    await scr();
+    await solo();
+  };
 }
 async function refreshSoloHistory(){
   try{
@@ -297,6 +376,9 @@ async function refreshSoloHistory(){
 }
 async function solo(){
   try{
+    const folder=currentSolveFolder()||defaultSolveFolder();
+    if(!loadActiveSolveFolder()&&!s.solveFolder){folderSetupView();return}
+    applySolveFolder(folder);
     if(!s.scramble)s.scramble=randomScramble();
     renderSoloView([]);
     bindSolo();
@@ -324,6 +406,12 @@ function startSolve(){
   s.phase="solving";
   s.solveStart=performance.now();
   set(0,"SOLVING");
+  if(s.blindMode){
+    const scrambleText=document.querySelector(".scramble-text");
+    const cubePanel=document.querySelector(".cube-panel");
+    if(scrambleText)scrambleText.textContent="BLIND MODE ACTIVE";
+    if(cubePanel)cubePanel.innerHTML=`<div class="blind-panel"><div class="blind-head">BLIND SOLVE IN PROGRESS</div><p>Scramble hidden. Execute from memory.</p><div class="blind-records"><div><span>BLIND PB</span><strong>${blindRecord.best!=null?fmt(blindRecord.best):"—"}</strong></div><div><span>BLIND RUNS</span><strong>${blindRecord.solves||0}</strong></div></div></div>`;
+  }
 }
 async function finish(){
   if(s.phase!=="solving")return;
@@ -334,6 +422,11 @@ async function finish(){
   s.phase="stopped";
   const display=s.penalty==="DNF"?"DNF":fmt(ms+(s.penalty==="+2"?2000:0));
   s.last={display};
+  if(s.blindMode&&Number.isFinite(ms)){
+    blindRecord.solves=(blindRecord.solves||0)+1;
+    if(blindRecord.best==null||ms<blindRecord.best)blindRecord.best=ms;
+    saveBlindRecord(blindRecord);
+  }
   try{
     await addSolve({id:crypto.randomUUID(),createdAt:Date.now(),puzzle:s.puzzle,scramble:s.scramble,timeMs:ms,penalty:s.penalty,display});
     toast(display);
@@ -351,7 +444,8 @@ function bindSolo(){
     if(s.phase==="solving"){finish();return;}
   };
   document.querySelector("#new").onclick=async()=>{stop();s.replayScramble=null;s.phase="ready";await scr();solo()};
-  document.querySelector("#p").onchange=async e=>{s.puzzle=e.target.value;stop();s.replayScramble=null;s.phase="ready";await scr();solo()};
+  document.querySelector("#switchFolder").onclick=()=>folderSetupView();
+  document.querySelector("#p").onchange=async e=>{const base=currentSolveFolder()||defaultSolveFolder();const folder=upsertSolveFolder({...base,puzzle:e.target.value});applySolveFolder(folder);stop();s.replayScramble=null;s.phase="ready";await scr();solo()};
   document.querySelector("#timerAction")?.addEventListener("click",runTimerToggle);
   document.querySelector("#replayScramble")?.addEventListener("click",()=>{
     if(s.replayScramble) s.replayScramble();
@@ -420,16 +514,16 @@ function bindSolo(){
   document.addEventListener("keydown",keyDown,true);document.addEventListener("keyup",keyUp,true);
   window._cubeClashSoloKeyHandler=keyDown;window._cubeClashSoloKeyUpHandler=keyUp;
 }
-function tutorial(){v(`<div class="tutorial-screen"><div class="tutorial-card"><div class="tutorial-kicker">FIRST TIME SETUP / 01</div><h1 class="tutorial-title">HOW CUBECLASH WORKS</h1><p class="tutorial-intro">A quick guide before you start. You can reopen this tutorial later from the menu.</p><div class="tutorial-steps"><article><span>01</span><h2>CHOOSE A PUZZLE</h2><p>Select 2×2 or 3×3. CubeClash generates a new internally generated scramble for every solve.</p></article><article><span>02</span><h2>READ THE SCRAMBLE</h2><p>The 3D cube shows the exact state produced by the scramble, so the visual matches the moves shown above it.</p></article><article><span>03</span><h2>INSPECTION</h2><p>Press Space, Enter, or tap the timer once to begin inspection. Under 15 seconds is normal, 15 to under 17 seconds is +2, and 17 seconds or more is DNF.</p></article><article><span>04</span><h2>SOLVE</h2><p>During inspection, hold Space or Enter and release after the hold indicator appears to start the solve. Press the key again to finish. Your result is saved on this device.</p></article><article><span>05</span><h2>1V1 ROOMS</h2><p>For beta, rooms use a browser-to-browser WebRTC connection. The host and guest exchange connection data to connect.</p></article><article><span>06</span><h2>YOUR DATA</h2><p>Solves and settings stay in your browser. Use JSON export if you want a backup or to move your timer data.</p></article></div><div class="tutorial-actions"><button class="primary-btn" id="tutorialStart">I UNDERSTAND — OPEN MENU</button></div></div></div>`);document.querySelector("#tutorialStart").onclick=()=>{localStorage.setItem("cubeclash-tutorial-seen","1");home()}}
-function dashboard(){v(`<div class="hero"><div class="hero-grid"><div><div class="section-title"><small>01 / SPEEDCUBING PLATFORM</small><small>BETA</small></div><h1 class="hero-title cube-font">CUBE<span>CLASH</span></h1><p class="hero-copy">A smooth responsive 2×2 and 3×3 speedcubing timer with an internal scramble engine, real 3D scramble visualization, local history, installable PWA support, and peer-to-peer 1v1 rooms.</p><div class="hero-actions"><button class="primary-btn" data-view="solo">SOLO TIMER</button><button class="ghost-btn" data-view="room">CREATE / JOIN 1V1</button></div></div><div class="technical-card"><div class="spec-list"><div class="spec"><span>PUZZLES</span><span>2×2 / 3×3</span></div><div class="spec"><span>SCRAMBLES</span><span>INTERNAL ENGINE</span></div><div class="spec"><span>SYNC</span><span>WEBRTC P2P</span></div><div class="spec"><span>STORAGE</span><span>INDEXEDDB</span></div><div class="spec"><span>INSTALL</span><span>PWA</span></div></div></div></div></div>`)}
-function home(){v(`<div class="menu-screen"><div class="menu-wrap"><section class="menu-main"><div class="menu-content"><div class="menu-kicker">WELCOME / CUBECLASH BETA</div><h1 class="menu-title">CUBE<span>CLASH</span></h1><p class="menu-sub">Train faster, track your solves, and jump into a quick face-off with a clean speedcubing setup made for focus.</p><div class="menu-badges"><span>2×2</span><span>3×3</span><span>STATS</span><span>ROOMS</span></div><div class="menu-actions"><button class="menu-action" data-view="solo"><span>SOLO TIMER</span><span class="arrow">→</span></button><button class="menu-action" data-view="room"><span>CREATE / JOIN 1V1</span><span class="arrow">→</span></button><button class="menu-action" data-view="settings"><span>SETTINGS</span><span class="arrow">→</span></button></div></div><div class="menu-mini-stats"><div class="mini-stat"><span>BEST</span><strong>—</strong></div><div class="mini-stat"><span>LAST</span><strong>—</strong></div><div class="mini-stat"><span>MODE</span><strong>SOLO</strong></div></div></section>${themePanel()}</div></div>`);applyTheme(currentTheme());bindTheme();}
+function tutorial(){v(`<div class="tutorial-screen"><div class="tutorial-card"><div class="tutorial-kicker">FIRST TIME SETUP / 01</div><h1 class="tutorial-title">HOW CUBECLASH WORKS</h1><p class="tutorial-intro">A quick guide before you start. You can reopen this tutorial later from the menu.</p><div class="tutorial-steps"><article><span>01</span><h2>CHOOSE A PUZZLE</h2><p>Select 2×2 through 7×7. CubeClash generates a new internally generated scramble for every solve.</p></article><article><span>02</span><h2>READ THE SCRAMBLE</h2><p>The 3D cube shows the exact state produced by the scramble, so the visual matches the moves shown above it.</p></article><article><span>03</span><h2>INSPECTION</h2><p>Press Space, Enter, or tap the timer once to begin inspection. Under 15 seconds is normal, 15 to under 17 seconds is +2, and 17 seconds or more is DNF.</p></article><article><span>04</span><h2>SOLVE</h2><p>During inspection, hold Space or Enter and release after the hold indicator appears to start the solve. Press the key again to finish. Your result is saved on this device.</p></article><article><span>05</span><h2>1V1 ROOMS</h2><p>For beta, rooms use a browser-to-browser WebRTC connection. The host and guest exchange connection data to connect.</p></article><article><span>06</span><h2>YOUR DATA</h2><p>Solves and settings stay in your browser. Use JSON export if you want a backup or to move your timer data.</p></article></div><div class="tutorial-actions"><button class="primary-btn" id="tutorialStart">I UNDERSTAND — OPEN MENU</button></div></div></div>`);document.querySelector("#tutorialStart").onclick=()=>{localStorage.setItem("cubeclash-tutorial-seen","1");home()}}
+function dashboard(){v(`<div class="hero"><div class="hero-grid"><div><div class="section-title"><small>01 / SPEEDCUBING PLATFORM</small><small>BETA</small></div><h1 class="hero-title cube-font">CUBE<span>CLASH</span></h1><p class="hero-copy">A smooth responsive speedcubing timer for 2×2 through 7×7 with an internal scramble engine, real 3D scramble visualization, local history, installable PWA support, and peer-to-peer 1v1 rooms.</p><div class="hero-actions"><button class="primary-btn" data-view="solo">SOLO TIMER</button><button class="ghost-btn" data-view="room">CREATE / JOIN 1V1</button></div></div><div class="technical-card"><div class="spec-list"><div class="spec"><span>PUZZLES</span><span>2×2 / 7×7</span></div><div class="spec"><span>SCRAMBLES</span><span>INTERNAL ENGINE</span></div><div class="spec"><span>SYNC</span><span>WEBRTC P2P</span></div><div class="spec"><span>STORAGE</span><span>INDEXEDDB</span></div><div class="spec"><span>INSTALL</span><span>PWA</span></div></div></div></div></div>`)}
+function home(){const folder=currentSolveFolder()||defaultSolveFolder();v(`<div class="menu-screen"><div class="menu-wrap"><section class="menu-main"><div class="menu-content"><div class="menu-kicker">WELCOME / CUBECLASH BETA</div><h1 class="menu-title">CUBE<span>CLASH</span></h1><p class="menu-sub">Train faster, organize your sessions, and jump into solo or online cube practice from one polished dashboard.</p><div class="menu-badges"><span>${puzzleLabel(folder.puzzle)}</span><span>${folder.mode==="blind"?"BLIND":"NORMAL"}</span><span>STATS</span><span>ROOMS</span></div><div class="menu-actions"><button class="menu-action" data-view="solo"><span>SOLO TIMER</span><span class="arrow">→</span></button><button class="menu-action" data-view="room"><span>CREATE / JOIN 1V1</span><span class="arrow">→</span></button><button class="menu-action" data-view="settings"><span>SETTINGS</span><span class="arrow">→</span></button></div></div><div class="menu-mini-stats"><div class="mini-stat"><span>SESSION</span><strong>${esc(folder.name)}</strong></div><div class="mini-stat"><span>PUZZLE</span><strong>${puzzleLabel(folder.puzzle)}</strong></div><div class="mini-stat"><span>MODE</span><strong>${folder.mode==="blind"?"BLIND":"NORMAL"}</strong></div></div></section><aside class="menu-visual"><div class="menu-visual-head"><span>ACTIVE FOLDER</span><strong>${esc(folder.name)}</strong></div><div class="menu-visual-cube"><span class="sticker-face face-W"></span><span class="sticker-face face-R"></span><span class="sticker-face face-B"></span><span class="sticker-face face-Y"></span><span class="sticker-face face-O"></span><span class="sticker-face face-G"></span></div><div class="menu-visual-grid"><div><small>INSPECTION</small><strong>${folder.inspection}s</strong></div><div><small>SIZE</small><strong>${puzzleLabel(folder.puzzle)}</strong></div><div><small>SESSION</small><strong>${folder.mode==="blind"?"BLIND":"STANDARD"}</strong></div></div></aside></div></div>`);applyTheme(currentTheme());bindTheme();}
 
 function exposeMatchBridge(){
   window.CubeClashBridge={get state(){return {role:s.role,roomCode:s.roomCode||"",scramble:s.scramble||"",puzzle:s.puzzle||"333",match:s.match||null,opponent:s.opponent||{time:"0.00",status:"WAITING"},phase:s.matchPhase||"ready",theme:localStorage.getItem("cubeclash-theme")||"dark",name:settings.name||""}},get localStream(){return s.localStream||null},get remoteStream(){return s.remoteStream||null}};
 }
 exposeMatchBridge();
 function room(){
-  v(`<div class="room-page"><div class="section-title"><h1>1V1 ROOM</h1><small>LIVE WEBRTC / PEER-TO-PEER</small></div><div class="room-layout"><div class="room-card"><h2>CREATE ROOM</h2><p class="room-help">Choose the puzzle, number of rounds, inspection time, and penalties. Share the room code with Player 2.</p><div class="form-grid"><div class="field"><label>PUZZLE</label><select id="rp"><option value="333">3×3</option><option value="222">2×2</option></select></div><div class="field"><label>ROUNDS</label><select id="rr"><option>1</option><option>3</option><option selected>5</option><option>7</option></select></div><div class="field"><label>INSPECTION</label><select id="ri"><option>15</option><option>10</option><option>0</option></select></div><div class="field"><label>FORMAT</label><select id="rf"><option>FIRST TO</option><option>BEST OF</option></select></div></div><div class="checks"><label class="check"><input id="rp2" type="checkbox" checked> +2</label><label class="check"><input id="rdnf" type="checkbox" checked> DNF</label></div><button class="primary-btn" id="create">CREATE ROOM</button><div id="hostRoom" class="room-code-box" hidden></div></div><div class="room-card"><h2>JOIN ROOM</h2><p class="room-help">Enter the room code shown by Player 1. The match stays on this same page.</p><div class="field"><label>ROOM CODE</label><input id="roomCode" class="code-input" autocomplete="off" autocapitalize="characters" placeholder="e.g. CC7A9P2Q"></div><button class="primary-btn" id="join">JOIN ROOM</button></div></div><div id="rs" class="empty">NO ACTIVE ROOM</div></div>`);
+  v(`<div class="room-page"><div class="section-title"><h1>1V1 ROOM</h1><small>LIVE WEBRTC / PEER-TO-PEER</small></div><div class="room-layout"><div class="room-card"><h2>CREATE ROOM</h2><p class="room-help">Choose the puzzle, number of rounds, inspection time, and penalties. Share the room code with Player 2.</p><div class="form-grid"><div class="field"><label>PUZZLE</label><select id="rp">${puzzleOptionsMarkup(s.puzzle)}</select></div><div class="field"><label>ROUNDS</label><select id="rr"><option>1</option><option>3</option><option selected>5</option><option>7</option></select></div><div class="field"><label>INSPECTION</label><select id="ri"><option>15</option><option>10</option><option>0</option></select></div><div class="field"><label>FORMAT</label><select id="rf"><option>FIRST TO</option><option>BEST OF</option></select></div></div><div class="checks"><label class="check"><input id="rp2" type="checkbox" checked> +2</label><label class="check"><input id="rdnf" type="checkbox" checked> DNF</label></div><button class="primary-btn" id="create">CREATE ROOM</button><div id="hostRoom" class="room-code-box" hidden></div></div><div class="room-card"><h2>JOIN ROOM</h2><p class="room-help">Enter the room code shown by Player 1. The match stays on this same page.</p><div class="field"><label>ROOM CODE</label><input id="roomCode" class="code-input" autocomplete="off" autocapitalize="characters" placeholder="e.g. CC7A9P2Q"></div><button class="primary-btn" id="join">JOIN ROOM</button></div></div><div id="rs" class="empty">NO ACTIVE ROOM</div></div>`);
   document.querySelector("#create").onclick=createRoom;
   document.querySelector("#join").onclick=joinRoom;
 }
@@ -599,7 +693,7 @@ function faceletGrid(size,stickers,face){
 }
 function render2DScramble(){
   const root=document.querySelector("#scramble2DVisual"); if(!root)return;
-  const size=s.puzzle==="222"?2:3;
+  const size=puzzleSizeFromCode(s.puzzle);
   const state=buildCubeState(size,s.scramble||"");
   const by={U:[],D:[],F:[],B:[],R:[],L:[]};
   const normals={U:[0,1,0],D:[0,-1,0],F:[0,0,1],B:[0,0,-1],R:[1,0,0],L:[-1,0,0]};

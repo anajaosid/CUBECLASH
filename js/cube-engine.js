@@ -71,7 +71,7 @@ const STANDARD_CORNER_CYCLES={
   B:[[1,1,-1],[-1,1,-1],[-1,-1,-1],[1,-1,-1]]
 };
 function validateCubeState(size,state){
-  const expected=size===3?54:24;
+  const expected=size*size*6;
   const seen=new Set(),counts={R:0,O:0,W:0,Y:0,G:0,B:0};
   for(const c of state){
     const key=c.p.join(",");
@@ -112,7 +112,6 @@ function auditCubeEngine(size,scramble){
 
 const FACE_ORDER=["U","R","F","D","L","B"];
 function stateToFaceletString(state,size=3){
-  if(size!==2&&size!==3) throw new Error("Unsupported cube size");
   const out={U:Array(size*size).fill(null),R:Array(size*size).fill(null),F:Array(size*size).fill(null),D:Array(size*size).fill(null),L:Array(size*size).fill(null),B:Array(size*size).fill(null)};
   const max=size-1;
   const coordToIndex=v=>Math.round(v*max/2+max/2);
